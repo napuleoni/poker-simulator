@@ -592,9 +592,12 @@ def simulate_postflop_once(
     # ==================================================
     # RIVER END: FINAL DECISION
     # ==================================================
+
+    if not force_showdown:
+        return "win_noshowdown", "river", pot_size - hero_invested
     
-    if is_heads_up_hand:
-        force_showdown = True
+    # muuten showdown
+
 
 
     
@@ -850,4 +853,5 @@ def run_simulation_single_strategy(
             f"SD EQ: {showdown_eq:.1f}% | "
             f"SD freq: {showdown_hands / total_hands * 100:.1f}%"
         )
+
 
