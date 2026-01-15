@@ -545,7 +545,7 @@ def simulate_postflop_once(
     else:
         hero_bets = False
         call_prob = 0.0
-
+    
         if hero_strength >= 3:
             hero_bets = True
             call_prob = 0.75
@@ -557,61 +557,52 @@ def simulate_postflop_once(
                 river_profile["bluff_freq"] * hero_strategy.bluff_freq
             )
             call_prob = 0.35
-
+    
         if hero_bets:
             hero_invested += bet
             hero_stack -= bet
             pot_size += bet
-
+    
             callers = []
             for hand, profile, committed in active:
                 opp_strength = hand_strength_bucket(hand, board, evaluator)
                 if opp_strength >= hero_strength and random.random() < call_prob:
                     callers.append((hand, profile, committed))
                     pot_size += bet
-
+    
             if callers:
                 active = callers
                 force_showdown = True
             else:
-                # hero bet, kaikki foldaa → EI showdownia
-                return "win_noshowdown", "river", pot_size - hero_invested
-
+                # hero bet → kaikki foldaa → ei showdownia
+                force_showdown = False
+    
         else:
             # hero check
             if is_heads_up_hand:
                 # HU check–check → showdown
                 force_showdown = True
             else:
-                # MW check–check → non-showdown
-                return "win_noshowdown", "river", pot_size - hero_invested
-
-
+                # MW check–check → ei showdownia
+                force_showdown = False
     
-
+    
     # ==================================================
-    # RIVER END: FINAL DECISION
+    # RIVER END: FINAL DECISION (YHTEINEN EXIT)
     # ==================================================
-
     if not force_showdown:
         return "win_noshowdown", "river", pot_size - hero_invested
     
-    # muuten showdown
+    # muuten jatketaan showdowniin
 
-
-
-    
-    if force_showdown:
-        # jatketaan showdowniin
-        pass
-    else:
-        return "win_noshowdown", "river", pot_size - hero_invested
-
-    # DEBUG: pakota HU aina showdowniin riverissä
 
     # ==================================================
     # SHOWDOWN
     # ==================================================
+   
+    if not force_showdown:
+    raise RuntimeError("Showdown reached without force_showdown=True")
+
     assert_unique_cards(hero_hand, board, *[h for h, _, _ in active])
 
     board_cards = [TreysCard.new(c) for c in board]
@@ -637,10 +628,6 @@ def simulate_postflop_once(
 
 
    
-# ======================================================
-# KOKONAISSIMULAATIO
-# ======================================================
-
 def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
 
     if config.random_seed is not None:
@@ -659,15 +646,18 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
         # =========================
         # INIT
         # =========================
-        wins = losses = 0
+        wins = losses = ties = 0
         non_sd_wins = 0
         showdown_wins = showdown_losses = showdown_hands = 0
 
         total_net_bb = 0.0
-        non_sd_net_bb = 0.0
         showdown_net_bb = 0.0
-        hands_played = 0   # 🔥 UUSI: oikea käsilaskuri
+        non_sd_net_bb = 0.0
 
+        sd_count = 0
+        nsd_count = 0
+
+        hands_played = 0
 
         vpip_tracker = {"total": 0, "played": 0}
 
@@ -680,7 +670,7 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
         # SIM LOOP
         # =========================
         for _ in range(config.iterations):
-            hands_played += 1   # 🔥 LISÄTTY
+            hands_played += 1
 
             result, street, net_bb = simulate_postflop_once(
                 hero_hand=config.hero_hand,
@@ -692,10 +682,17 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
 
             total_net_bb += net_bb
 
-            # --- showdown vs non-SD ---
+            # ===== SD vs NSD EV DEBUG =====
+            if result in ("win", "loss", "tie"):
+                showdown_net_bb += net_bb
+                sd_count += 1
+            else:
+                non_sd_net_bb += net_bb
+                nsd_count += 1
+
+            # ===== W/L tracking =====
             if result in ("win", "loss", "tie"):
                 showdown_hands += 1
-                showdown_net_bb += net_bb
 
                 if result == "win":
                     showdown_wins += 1
@@ -703,15 +700,9 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
                 elif result == "loss":
                     showdown_losses += 1
                     losses += 1
-                elif result == "tie":
-                    showdown_wins += 0.5
-                    showdown_losses += 0.5
-                    wins += 1
-                    losses += 1
-
+                else:  # tie
+                    ties += 1
             else:
-                non_sd_net_bb += net_bb
-
                 if result == "win_noshowdown":
                     wins += 1
                     non_sd_wins += 1
@@ -721,10 +712,9 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
         # =========================
         # METRICS
         # =========================
-        total_hands = hands_played   # ✅ OIKEA käsimäärä
+        total_hands = hands_played
+
         showdown_total = showdown_wins + showdown_losses
-
-
         showdown_equity = (
             showdown_wins / showdown_total * 100
             if showdown_total else 0.0
@@ -741,14 +731,15 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
         mode = "HU" if opp_count == 1 else "MW"
 
         # =========================
-        # OUTPUT
+        # DEBUG OUTPUT (KOHTA 4)
         # =========================
         print(
-            f"[{mode}] Opponents: {opp_count} | "
-            f"EV/hand: {ev_per_hand:.3f} bb | "
-            f"bb/100: {bb_per_100:.2f} | "
-            f"SD EQ: {showdown_equity:.2f}% | "
-            f"SD freq: {showdown_hands / max(1, total_hands) * 100:.2f}%"
+            f"[{mode}] Opps={opp_count} | "
+            f"EV/hand={ev_per_hand:.3f} | "
+            f"bb/100={bb_per_100:.2f} | "
+            f"SD freq={sd_count / total_hands * 100:.2f}% | "
+            f"SD EV={showdown_net_bb:.2f} | "
+            f"NSD EV={non_sd_net_bb:.2f}"
         )
 
         results.append(
@@ -756,7 +747,7 @@ def run_simulation(config: SimulationConfig) -> List[SimulationResult]:
                 opponents=opp_count,
                 wins=wins,
                 losses=losses,
-                ties=0,
+                ties=ties,
                 equity=round(showdown_equity, 2),
                 non_showdown_win_pct=round(non_sd_pct, 2),
                 showdown_win_pct=round(showdown_equity, 2),
@@ -853,5 +844,6 @@ def run_simulation_single_strategy(
             f"SD EQ: {showdown_eq:.1f}% | "
             f"SD freq: {showdown_hands / total_hands * 100:.1f}%"
         )
+
 
 
