@@ -11,7 +11,7 @@ from engine.range_generator import generate_profile_range
 from engine.hero_decision import HeroDecisionModel
 from engine.betting_model import opponent_call_decision
 from engine.hero_strategy import HeroStrategyProfile
-DEBUG = True   # ← vaihda True kun haluat tutkia
+DEBUG = False   # ← vaihda True kun haluat tutkia
 
 
 
@@ -381,8 +381,6 @@ def simulate_postflop_once(
         return "win_noshowdown", "flop", pot_size - hero_invested
 
     is_heads_up_hand = (len(active) == 1)
-    if is_heads_up_hand:
-        print("[DEBUG FLOP HU ACTIVE]")
 
     # ==================================================
     # TURN
@@ -600,8 +598,7 @@ def simulate_postflop_once(
     # SHOWDOWN
     # ==================================================
    
-    if not force_showdown:
-    raise RuntimeError("Showdown reached without force_showdown=True")
+
 
     assert_unique_cards(hero_hand, board, *[h for h, _, _ in active])
 
@@ -844,6 +841,7 @@ def run_simulation_single_strategy(
             f"SD EQ: {showdown_eq:.1f}% | "
             f"SD freq: {showdown_hands / total_hands * 100:.1f}%"
         )
+
 
 
 
